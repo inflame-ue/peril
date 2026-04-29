@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strings"
 
@@ -9,6 +10,13 @@ import (
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
+
+func handlerPause(gameState *gamelogic.GameState) func(routing.PlayingState) {
+	return func(playingState routing.PlayingState) {
+		defer fmt.Print("> ")
+		gameState.HandlePause(playingState)
+	}
+}
 
 func main() {
 	connectionString := "amqp://guest:guest@localhost:5672/"
@@ -23,9 +31,9 @@ func main() {
 	}
 
 	queueName := strings.Join([]string{routing.PauseKey, username}, ".")
-	pubsub.DeclareAndBind(amqpConnection, routing.ExchangePerilDirect, queueName, routing.PauseKey, pubsub.Transient)
 
 	gameState := gamelogic.NewGameState(username)
+	pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilDirect, queueName, routing.PauseKey, pubsub.Transient, handlerPause(gameState))
 
 outer:
 	for {
