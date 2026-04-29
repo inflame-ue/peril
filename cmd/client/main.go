@@ -18,6 +18,13 @@ func handlerPause(gameState *gamelogic.GameState) func(routing.PlayingState) {
 	}
 }
 
+func handlerMove(gameState *gamelogic.GameState) func(gamelogic.ArmyMove) {
+	return func(move gamelogic.ArmyMove) {
+		defer fmt.Print("> ")
+		gameState.HandleMove(move)
+	}
+}
+
 func main() {
 	connectionString := "amqp://guest:guest@localhost:5672/"
 	amqpConnection, err := amqp.Dial(connectionString)
@@ -30,10 +37,12 @@ func main() {
 		log.Fatalf("failed to fetch the username: %v", err)
 	}
 
-	queueName := strings.Join([]string{routing.PauseKey, username}, ".")
-
+	pauseQueueName := strings.Join([]string{routing.PauseKey, username}, ".")
 	gameState := gamelogic.NewGameState(username)
-	pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilDirect, queueName, routing.PauseKey, pubsub.Transient, handlerPause(gameState))
+	pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilDirect, pauseQueueName, routing.PauseKey, pubsub.Transient, handlerPause(gameState))
+
+	moveQueueName := strings.Join([]string{"army_moves", username}, ".")
+	pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilTopic, moveQueueName, "army_moves.*", pubsub.Transient, handlerMove(gameState))
 
 outer:
 	for {
@@ -50,9 +59,23 @@ outer:
 		case "move":
 			move, err := gameState.CommandMove(words)
 			if err != nil {
-				log.Printf("failed make a move: %v", err)
+				log.Printf("failed to make a move: %v", err)
 				continue
 			}
+
+			moveAMQPChannel, err := amqpConnection.Channel()
+			if err != nil {
+				log.Printf("failed to establish a move channel: %v", err)
+				continue
+			}
+
+			err = pubsub.PublishJSON(moveAMQPChannel, routing.ExchangePerilTopic, moveQueueName, move)
+			if err != nil {
+				log.Print(err)
+				return
+			}
+
+			log.Printf("published the message to %v queue", moveQueueName)
 			log.Printf("performed the move of %v to location: %v", move.Units, move.ToLocation)
 		case "status":
 			gameState.CommandStatus()
