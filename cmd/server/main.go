@@ -27,6 +27,9 @@ func main() {
 		log.Fatalf("failed to create a channel over the connection: %v", err)
 	}
 
+	queueName := "game_logs"
+	pubsub.DeclareAndBind(amqpConnection, routing.ExchangePerilTopic, queueName, routing.GameLogSlug, pubsub.Durable)
+
 	for {
 		words := gamelogic.GetInput()
 		if len(words) == 0 {

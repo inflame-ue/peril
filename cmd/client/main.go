@@ -45,7 +45,7 @@ outer:
 				log.Printf("failed make a move: %v", err)
 				continue
 			}
-			log.Printf("performed the move to location: %v", move.ToLocation)
+			log.Printf("performed the move of %v to location: %v", move.Units, move.ToLocation)
 		case "status":
 			gameState.CommandStatus()
 		case "help":
