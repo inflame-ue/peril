@@ -58,10 +58,6 @@ func main() {
 		} else {
 			log.Print("unknown command")
 		}
-
-		signalChan := make(chan os.Signal, 1)
-		signal.Notify(signalChan, os.Interrupt)
-		<-signalChan
 	}
 	log.Print("shutting down...")
 }
