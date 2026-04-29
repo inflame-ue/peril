@@ -1,7 +1,22 @@
 package main
 
-import "fmt"
+import (
+	"log"
+
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
+)
 
 func main() {
-	fmt.Println("Starting Peril client...")
+	connectionString := "amqp://guest:guest@localhost:5672/"
+	amqpConnection, err := amqp.Dial(connectionString)
+	if err != nil {
+		log.Fatalf("failed to connect to rabbitmq: %v", err)
+	}
+
+	username, err := gamelogic.ClientWelcome()
+	if err != nil {
+		log.Fatalf("failed to fetch the username: %v", err)
+	}
+
+	
 }
