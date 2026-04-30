@@ -7,6 +7,7 @@ import (
 )
 
 type SimpleQueueType int
+
 const (
 	Durable SimpleQueueType = iota
 	Transient
@@ -31,11 +32,13 @@ func DeclareAndBind(conn *amqp.Connection, exchange, queueName, key string, queu
 
 	amqpQueue, err := amqpChannel.QueueDeclare(
 		queueName,
-		queueDurable, 
+		queueDurable,
 		queueAutoDelete,
 		queueExclusive,
 		false,
-		nil,
+		amqp.Table{
+			"x-dead-letter-exchange": "peril_dlx",
+		},
 	)
 	if err != nil {
 		return &amqp.Channel{}, amqp.Queue{}, fmt.Errorf("failed to declare the queue: %v", err)

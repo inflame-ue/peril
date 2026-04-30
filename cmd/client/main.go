@@ -11,17 +11,57 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-func handlerPause(gameState *gamelogic.GameState) func(routing.PlayingState) {
-	return func(playingState routing.PlayingState) {
+func handlerPause(gameState *gamelogic.GameState) func(routing.PlayingState) pubsub.AckType {
+	return func(playingState routing.PlayingState) pubsub.AckType {
 		defer fmt.Print("> ")
 		gameState.HandlePause(playingState)
+		return pubsub.Ack
 	}
 }
 
-func handlerMove(gameState *gamelogic.GameState) func(gamelogic.ArmyMove) {
-	return func(move gamelogic.ArmyMove) {
+func handlerMove(amqpChannel *amqp.Channel, gameState *gamelogic.GameState) func(gamelogic.ArmyMove) pubsub.AckType {
+	return func(move gamelogic.ArmyMove) pubsub.AckType {
 		defer fmt.Print("> ")
-		gameState.HandleMove(move)
+		moveOutcome := gameState.HandleMove(move)
+
+		if moveOutcome == gamelogic.MoveOutcomeMakeWar {
+			routingKey := strings.Join([]string{routing.WarRecognitionsPrefix, move.Player.Username}, ".")
+			dataToPublish := gamelogic.RecognitionOfWar{
+				Attacker: move.Player,
+				Defender: gameState.GetPlayerSnap(),
+			}
+			pubsub.PublishJSON(amqpChannel, routing.ExchangePerilTopic, routingKey, dataToPublish)
+			return pubsub.NackRequeue
+		}
+
+		if moveOutcome == gamelogic.MoveOutComeSafe {
+			return pubsub.Ack
+		}
+
+		return pubsub.NackDiscard
+	}
+}
+
+func handlerWarMessages(gameState *gamelogic.GameState) func(gamelogic.RecognitionOfWar) pubsub.AckType {
+	return func(msg gamelogic.RecognitionOfWar) pubsub.AckType {
+		defer fmt.Print("> ")
+		outcome, _, _ := gameState.HandleWar(msg)
+
+		switch outcome {
+		case gamelogic.WarOutcomeNotInvolved:
+			return pubsub.NackRequeue
+		case gamelogic.WarOutcomeNoUnits:
+			return pubsub.NackDiscard
+		case gamelogic.WarOutcomeOpponentWon:
+			return pubsub.Ack
+		case gamelogic.WarOutcomeYouWon:
+			return pubsub.Ack
+		case gamelogic.WarOutcomeDraw:
+			return pubsub.Ack
+		default:
+			log.Print("uknown war outcome...discarding message...")
+			return pubsub.NackDiscard
+		}
 	}
 }
 
@@ -41,8 +81,12 @@ func main() {
 	gameState := gamelogic.NewGameState(username)
 	pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilDirect, pauseQueueName, routing.PauseKey, pubsub.Transient, handlerPause(gameState))
 
+	moveQueueChannel, err := amqpConnection.Channel()
+	if err != nil {
+		log.Fatalf("failed to create a move specific channel: %v", err)
+	}
 	moveQueueName := strings.Join([]string{"army_moves", username}, ".")
-	pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilTopic, moveQueueName, "army_moves.*", pubsub.Transient, handlerMove(gameState))
+	pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilTopic, moveQueueName, "army_moves.*", pubsub.Transient, handlerMove(moveQueueChannel, gameState))
 
 outer:
 	for {

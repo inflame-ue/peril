@@ -9,6 +9,14 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+type AckType int
+
+const (
+	Ack AckType = iota
+	NackRequeue
+	NackDiscard
+)
+
 func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	data, err := json.Marshal(val)
 	if err != nil {
@@ -25,7 +33,7 @@ func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	return nil
 }
 
-func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T)) error {
+func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T) AckType) error {
 	amqpChannel, amqpQueue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
 	if err != nil {
 		return err
@@ -43,7 +51,20 @@ func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string
 				log.Print("failed to umarhshal delivery message...skipping...")
 				continue
 			}
-			handler(data)
+
+			ackType := handler(data)
+			switch ackType {
+			case Ack:
+				log.Print("message acknowledge")
+				delivery.Ack(false)
+			case NackRequeue:
+				log.Print("message negative acknowledge and requeue")
+				delivery.Nack(false, true)
+			case NackDiscard:
+				log.Print("message negative acknowledge and discard to dead letter queue")
+				delivery.Nack(false, false)
+			}
+
 			delivery.Ack(false)
 		}
 	}()
