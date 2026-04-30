@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -18,6 +20,21 @@ const (
 	NackRequeue
 	NackDiscard
 )
+
+func PublishGameLogSlug(amqpChannel *amqp.Channel, username, msg string) error {
+	gl := routing.GameLog{
+		CurrentTime: time.Now(),
+		Message:     msg,
+		Username:    username,
+	}
+
+	err := PublishGob(amqpChannel, routing.ExchangePerilTopic, routing.GameLogSlug+"."+username, gl)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	var buffer bytes.Buffer
