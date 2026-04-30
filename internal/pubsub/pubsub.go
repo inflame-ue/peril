@@ -64,8 +64,6 @@ func SubscribeJSON[T any](conn *amqp.Connection, exchange, queueName, key string
 				log.Print("message negative acknowledge and discard to dead letter queue")
 				delivery.Nack(false, false)
 			}
-
-			delivery.Ack(false)
 		}
 	}()
 

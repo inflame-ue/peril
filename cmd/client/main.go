@@ -24,17 +24,25 @@ func handlerMove(amqpChannel *amqp.Channel, gameState *gamelogic.GameState) func
 		defer fmt.Print("> ")
 		moveOutcome := gameState.HandleMove(move)
 
-		if moveOutcome == gamelogic.MoveOutcomeMakeWar {
-			routingKey := strings.Join([]string{routing.WarRecognitionsPrefix, move.Player.Username}, ".")
-			dataToPublish := gamelogic.RecognitionOfWar{
-				Attacker: move.Player,
-				Defender: gameState.GetPlayerSnap(),
+		switch moveOutcome {
+		case gamelogic.MoveOutcomeSamePlayer:
+			return pubsub.Ack
+		case gamelogic.MoveOutComeSafe:
+			return pubsub.Ack
+		case gamelogic.MoveOutcomeMakeWar:
+			err := pubsub.PublishJSON(
+				amqpChannel,
+				routing.ExchangePerilTopic,
+				routing.WarRecognitionsPrefix+"."+gameState.GetUsername(),
+				gamelogic.RecognitionOfWar{
+					Attacker: move.Player,
+					Defender: gameState.GetPlayerSnap(),
+				},
+			)
+			if err != nil {
+				log.Printf("faild to publish json: %v", err)
+				return pubsub.NackRequeue
 			}
-			pubsub.PublishJSON(amqpChannel, routing.ExchangePerilTopic, routingKey, dataToPublish)
-			return pubsub.NackRequeue
-		}
-
-		if moveOutcome == gamelogic.MoveOutComeSafe {
 			return pubsub.Ack
 		}
 
@@ -58,10 +66,9 @@ func handlerWarMessages(gameState *gamelogic.GameState) func(gamelogic.Recogniti
 			return pubsub.Ack
 		case gamelogic.WarOutcomeDraw:
 			return pubsub.Ack
-		default:
-			log.Print("uknown war outcome...discarding message...")
-			return pubsub.NackDiscard
 		}
+
+		return pubsub.NackDiscard
 	}
 }
 
@@ -73,20 +80,32 @@ func main() {
 	}
 
 	username, err := gamelogic.ClientWelcome()
+	gameState := gamelogic.NewGameState(username)
 	if err != nil {
 		log.Fatalf("failed to fetch the username: %v", err)
 	}
-
-	pauseQueueName := strings.Join([]string{routing.PauseKey, username}, ".")
-	gameState := gamelogic.NewGameState(username)
-	pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilDirect, pauseQueueName, routing.PauseKey, pubsub.Transient, handlerPause(gameState))
 
 	moveQueueChannel, err := amqpConnection.Channel()
 	if err != nil {
 		log.Fatalf("failed to create a move specific channel: %v", err)
 	}
 	moveQueueName := strings.Join([]string{"army_moves", username}, ".")
-	pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilTopic, moveQueueName, "army_moves.*", pubsub.Transient, handlerMove(moveQueueChannel, gameState))
+	err = pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilTopic, moveQueueName, "army_moves.*", pubsub.Transient, handlerMove(moveQueueChannel, gameState))
+	if err != nil {
+		log.Print(err)
+	}
+
+	warMessagesRoutingKey := strings.Join([]string{routing.WarRecognitionsPrefix, "*"}, ".")
+	err = pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilTopic, routing.WarRecognitionsPrefix, warMessagesRoutingKey, pubsub.Durable, handlerWarMessages(gameState))
+	if err != nil {
+		log.Print(err)
+	}
+
+	pauseQueueName := strings.Join([]string{routing.PauseKey, username}, ".")
+	err = pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilDirect, pauseQueueName, routing.PauseKey, pubsub.Transient, handlerPause(gameState))
+	if err != nil {
+		log.Print(err)
+	}
 
 outer:
 	for {
@@ -113,7 +132,7 @@ outer:
 				continue
 			}
 
-			err = pubsub.PublishJSON(moveAMQPChannel, routing.ExchangePerilTopic, moveQueueName, move)
+			err = pubsub.PublishJSON(moveAMQPChannel, routing.ExchangePerilTopic, routing.ArmyMovesPrefix+"."+move.Player.Username, move)
 			if err != nil {
 				log.Print(err)
 				return
