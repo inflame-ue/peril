@@ -33,7 +33,7 @@ func main() {
 	err = pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilTopic, moveQueueName, "army_moves.*", pubsub.Transient, handlerMove(moveQueueChannel, gameState))
 	if err != nil {
 		log.Print(err)
-	}	
+	}
 
 	warQueueChannel, err := amqpConnection.Channel()
 	if err != nil {
@@ -49,6 +49,11 @@ func main() {
 	err = pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilDirect, pauseQueueName, routing.PauseKey, pubsub.Transient, handlerPause(gameState))
 	if err != nil {
 		log.Print(err)
+	}
+
+	spamChannel, err := amqpConnection.Channel()
+	if err != nil {
+		log.Printf("failed to establish a channel: %v", err)
 	}
 
 outer:
@@ -102,16 +107,11 @@ outer:
 				maliciousLog := gamelogic.GetMaliciousLog()
 				gameLog := routing.GameLog{
 					CurrentTime: time.Now(),
-					Message: maliciousLog,
-					Username: gameState.GetUsername(),
+					Message:     maliciousLog,
+					Username:    gameState.GetUsername(),
 				}
 
-				spamChannel, err := amqpConnection.Channel()
-				if err != nil {
-					log.Print("failed to establish a channel")
-					continue
-				}
-				err = pubsub.PublishGob(spamChannel, routing.ExchangePerilTopic, routing.GameLogSlug + "." + gameState.GetUsername(), gameLog)
+				err = pubsub.PublishGob(spamChannel, routing.ExchangePerilTopic, routing.GameLogSlug+"."+gameState.GetUsername(), gameLog)
 				if err != nil {
 					log.Print("failed to publish the game log")
 					continue

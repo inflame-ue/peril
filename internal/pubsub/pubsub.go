@@ -35,6 +35,10 @@ func subscribe[T any](
 		return err
 	}
 
+	err = amqpChannel.Qos(10, 0, false)
+	if err != nil {
+		return fmt.Errorf("failed to set the prefetch limit: %v", err)
+	}
 	deliveryChannel, err := amqpChannel.Consume(amqpQueue.Name, "", false, false, false, false, nil)
 	if err != nil {
 		return fmt.Errorf("failed to consume the queue: %v", err)
