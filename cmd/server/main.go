@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
@@ -8,6 +9,17 @@ import (
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
+
+func logHandler() func(routing.GameLog) pubsub.AckType {
+	return func(gl routing.GameLog) pubsub.AckType {
+		defer fmt.Print("\n> ")
+		err := gamelogic.WriteLog(gl)
+		if err != nil {
+			return pubsub.NackRequeue
+		}
+		return pubsub.Ack
+	}
+}
 
 func main() {
 	// this will display the commands the user of the REPL can use
@@ -28,7 +40,10 @@ func main() {
 	}
 
 	queueName := "game_logs"
-	pubsub.DeclareAndBind(amqpConnection, routing.ExchangePerilTopic, queueName, routing.GameLogSlug + ".*", pubsub.Durable)
+	err = pubsub.SubscribeGob(amqpConnection, routing.ExchangePerilTopic, queueName, routing.GameLogSlug + ".*", pubsub.Durable, logHandler())
+	if err != nil {
+		log.Fatalf("failed to suscribe to the game_logs queue: %v", err)
+	}
 
 	for {
 		words := gamelogic.GetInput()
