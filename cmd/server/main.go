@@ -28,7 +28,7 @@ func main() {
 	}
 
 	queueName := "game_logs"
-	pubsub.DeclareAndBind(amqpConnection, routing.ExchangePerilTopic, queueName, routing.GameLogSlug, pubsub.Durable)
+	pubsub.DeclareAndBind(amqpConnection, routing.ExchangePerilTopic, queueName, routing.GameLogSlug + ".*", pubsub.Durable)
 
 	for {
 		words := gamelogic.GetInput()

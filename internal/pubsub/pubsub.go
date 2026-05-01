@@ -54,6 +54,46 @@ func PublishGob[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	return nil
 }
 
+func SubscribeGob[T any](conn *amqp.Connection, exchange, queueName, key string, queueType SimpleQueueType, handler func(T) AckType) error {
+	amqpChannel, amqpQueue, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		return err
+	}
+	
+	deliveryChannel, err := amqpChannel.Consume(amqpQueue.Name, "", false, false, false, false, nil)
+	if err != nil {
+		return fmt.Errorf("failed to consume the queue: %v", err)
+	}
+
+	go func() {
+		for delivery := range deliveryChannel {
+			var data T
+			buffer := bytes.NewBuffer(delivery.Body)
+			decoder := gob.NewDecoder(buffer)
+			if err := decoder.Decode(&data); err != nil {
+				log.Print("failed to decode from gob...skipping...")
+				continue
+			}
+			
+			ackType := handler(data)
+			switch ackType {
+			case Ack:
+				log.Print("message acknowledge")
+				delivery.Ack(false)
+			case NackRequeue:
+				log.Print("message negative acknowledge and requeue")
+				delivery.Nack(false, true)
+			case NackDiscard:
+				log.Print("message negative acknowledge and discard to dead letter queue")
+				delivery.Nack(false, false)
+			}
+		}
+	}()
+
+	return nil
+	
+}
+
 func PublishJSON[T any](ch *amqp.Channel, exchange, key string, val T) error {
 	data, err := json.Marshal(val)
 	if err != nil {

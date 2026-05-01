@@ -62,13 +62,10 @@ func handlerWarMessages(amqpChannel *amqp.Channel, gameState *gamelogic.GameStat
 			return pubsub.NackDiscard
 		case gamelogic.WarOutcomeOpponentWon:
 			outcomeMsg = winner + " won a war against " + loser
-			return pubsub.Ack
 		case gamelogic.WarOutcomeYouWon:
 			outcomeMsg = winner + " won a war against " + loser
-			return pubsub.Ack
 		case gamelogic.WarOutcomeDraw:
 			outcomeMsg = "A war between " + winner + " and " + loser + " resulted in a draw"
-			return pubsub.Ack
 		}
 
 		err := pubsub.PublishGameLogSlug(amqpChannel, gameState.GetUsername(), outcomeMsg)

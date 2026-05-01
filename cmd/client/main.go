@@ -31,7 +31,7 @@ func main() {
 	err = pubsub.SubscribeJSON(amqpConnection, routing.ExchangePerilTopic, moveQueueName, "army_moves.*", pubsub.Transient, handlerMove(moveQueueChannel, gameState))
 	if err != nil {
 		log.Print(err)
-	}
+	}	
 
 	warQueueChannel, err := amqpConnection.Channel()
 	if err != nil {
