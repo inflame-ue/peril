@@ -2,7 +2,9 @@ package main
 
 import (
 	"log"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -87,7 +89,34 @@ outer:
 		case "help":
 			gamelogic.PrintClientHelp()
 		case "spam":
-			log.Print("Spamming not allowed yet!")
+			if len(words) < 2 {
+				log.Print("the number of spam messages must be provided")
+				continue
+			}
+			spamNumber, err := strconv.Atoi(words[1])
+			if err != nil {
+				log.Print("failed to parse the spam number...skipping...")
+				continue
+			}
+			for i := 0; i <= spamNumber; i++ {
+				maliciousLog := gamelogic.GetMaliciousLog()
+				gameLog := routing.GameLog{
+					CurrentTime: time.Now(),
+					Message: maliciousLog,
+					Username: gameState.GetUsername(),
+				}
+
+				spamChannel, err := amqpConnection.Channel()
+				if err != nil {
+					log.Print("failed to establish a channel")
+					continue
+				}
+				err = pubsub.PublishGob(spamChannel, routing.ExchangePerilTopic, routing.GameLogSlug + "." + gameState.GetUsername(), gameLog)
+				if err != nil {
+					log.Print("failed to publish the game log")
+					continue
+				}
+			}
 		case "quit":
 			gamelogic.PrintQuit()
 			break outer
